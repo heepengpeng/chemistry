@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>氢气燃烧微观动画 - 电子得失演示</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <script type="text/javascript" id="MathJax-script" async
+      src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+    </script>
+    <script>
+        // 配置 MathJax，使其支持 $...$ 作为行内公式
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']] 
+            },
+            svg: {
+                fontCache: 'global'
+            }
+        };
+    </script>
+    
+    <style>
+        body {
+            margin: 0;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* 化学方程式样式区域 */
+        #equation-box {
+            font-size: 2.5rem;
+            font-family: 'Courier New', monospace;
+            margin-bottom: 20px;
+            letter-spacing: 2px;
+            font-weight: bold;
+        }
+        
+        .chem-part {
+            display: inline-block;
+            opacity: 0.3; 
+            transition: all 0.5s;
+        }
+        
+        .active {
+            opacity: 1;
+            filter: drop-shadow(0 0 8px currentColor); 
+            transform: scale(1.1);
+        }
+
+        .h-text { color: #4d94ff; } 
+        .o-text { color: #ff4d4d; } 
+        .arrow { color: #aaa; margin: 0 15px; display:inline-block; }
+        .condition {
+            font-size: 1rem;
+            display: block;
+            text-align: center;
+            margin-top: -35px;
+            color: #aaa;
+            opacity: 0;
+        }
+
+        /* 动画舞台 */
+        #stage {
+            width: 800px;
+            height: 450px;
+            background: #222;
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            position: relative;
+        }
+        
+        /* 氧化还原解释框样式 */
+        #redox-explanation {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            border: 2px solid #00ffff;
+            padding: 20px 30px;
+            border-radius: 10px;
+            z-index: 10;
+            opacity: 0; 
+            width: 450px;
+            box-shadow: 0 0 15px #00ffff;
+            pointer-events: none; 
+            line-height: 1.6;
+        }
+        #redox-explanation h3 {
+            color: #00ffff;
+            text-align: center;
+            margin-top: 0;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+            padding-bottom: 10px;
+        }
+        #redox-explanation p {
+            font-size: 1.1rem;
+            margin: 10px 0;
+        }
+        /* MathJax 渲染后样式调整 */
+        #redox-explanation .MathJax {
+            display: inline; 
+            font-size: 1.1em; 
+        }
+        #redox-explanation .mjx-chtml {
+            color: #fff; 
+        }
+        #redox-explanation .mjx-sub, #redox-explanation .mjx-sup {
+            vertical-align: baseline !important;
+        }
+
+
+        /* SVG 样式 */
+        svg {
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+        }
+
+        .atom-circle { stroke: #fff; stroke-width: 2px; fill: rgba(255,255,255,0.1); }
+        .atom-label { fill: #fff; font-size: 14px; text-anchor: middle; dominant-baseline: middle; font-weight: bold; pointer-events: none; }
+        .electron { fill: #00ffff; filter: drop-shadow(0 0 2px #00ffff); }
+        
+        /* 氧原子特有样式 */
+        .oxygen .atom-circle { stroke: #ff4d4d; fill: rgba(255, 77, 77, 0.1); }
+        .oxygen .electron { fill: #ffcccc; } 
+
+        /* 氢原子特有样式 */
+        .hydrogen .atom-circle { stroke: #4d94ff; fill: rgba(77, 148, 255, 0.1); }
+
+        /* 文字说明区域 */
+        #caption {
+            margin-top: 20px;
+            font-size: 1.2rem;
+            height: 1.5em;
+            text-align: center;
+            color: #00ffff;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 10px 25px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #4d94ff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+        button:hover { background: #3366cc; }
+
+        .flash {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: white;
+            opacity: 0;
+            pointer-events: none;
+            mix-blend-mode: overlay;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="equation-box">
+        <span id="eq-reactants" class="chem-part">
+            2<span class="h-text">H<sub>2</sub></span> + <span class="o-text">O<sub>2</sub></span>
+        </span>
+        <span class="arrow">
+            ⟶ 
+            <span class="condition" id="eq-condition">点燃</span>
+        </span>
+        <span id="eq-products" class="chem-part">
+            2<span class="h-text">H</span><span class="h-text"><sub>2</sub></span><span class="o-text">O</span>
+        </span>
+    </div>
+
+    <div id="stage">
+        <svg viewBox="0 0 800 450" id="mainSvg">
+            </svg>
+        <div class="flash"></div>
+        
+        <div id="redox-explanation">
+            <h3>电子得失过程 (氧化还原反应)</h3>
+            
+            <p>
+                1. <span class="h-text">H</span> (氢) → <b>氧化 (Oxidation)</b>: 
+                <br>失去对外层电子的控制权 (化合价 $0 \rightarrow +1$)。
+            </p>
+            <p>
+                2. <span class="o-text">O</span> (氧) → <b>还原 (Reduction)</b>: 
+                <br>获得氢提供的电子 (化合价 $0 \rightarrow -2$)，形成稳定结构。
+            </p>
+        </div>
+        
+    </div>
+
+    <div id="caption">点击“开始演示”查看反应过程</div>
+    <button onclick="runAnimation()">开始演示 / 重置</button>
+
+    <script>
+        const svg = document.querySelector("#mainSvg");
+        const caption = document.querySelector("#caption");
+        let tl; 
+
+        function createAtom(type, x, y, id) {
+            const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            group.setAttribute("class", `atom ${type}`);
+            group.setAttribute("id", id);
+            group.setAttribute("transform", `translate(${x}, ${y})`);
+
+            const radius = type === 'oxygen' ? 30 : 15;
+            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("r", radius);
+            circle.setAttribute("class", "atom-circle");
+            
+            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.textContent = type === 'oxygen' ? "O" : "H";
+            text.setAttribute("class", "atom-label");
+
+            group.appendChild(circle);
+            group.appendChild(text);
+
+            const electronCount = type === 'oxygen' ? 6 : 1;
+            for(let i=0; i<electronCount; i++) {
+                const e = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                e.setAttribute("r", 4);
+                e.setAttribute("class", "electron");
+                const angle = (i / electronCount) * Math.PI * 2;
+                e.setAttribute("cx", Math.cos(angle) * radius);
+                e.setAttribute("cy", Math.sin(angle) * radius);
+                
+                if(type === 'hydrogen') {
+                    e.setAttribute("id", `${id}-electron`);
+                    e.setAttribute("fill", "#00ffff"); 
+                }
+                group.appendChild(e);
+            }
+            svg.appendChild(group);
+        }
+
+        function clearStage() {
+            svg.innerHTML = '';
+            if(tl) tl.kill();
+            // 重置方程式样式
+            gsap.set("#eq-reactants", { opacity: 0.3, scale: 1, clearProps: "filter" });
+            gsap.set("#eq-products", { opacity: 0.3, scale: 1, clearProps: "filter" });
+            gsap.set("#eq-condition", { opacity: 0 });
+            gsap.set(".arrow", { color: "#aaa", scale: 1 });
+            // 重置解释框样式：每次运行前隐藏它
+            gsap.set("#redox-explanation", { opacity: 0, scale: 0.8 });
+        }
+
+        function runAnimation() {
+            clearStage();
+            caption.innerHTML = "准备就绪";
+            
+            // 生成原子
+            createAtom("hydrogen", 100, 150, "h1");
+            createAtom("hydrogen", 140, 150, "h2");
+            createAtom("hydrogen", 100, 350, "h3");
+            createAtom("hydrogen", 140, 350, "h4");
+            createAtom("oxygen", 600, 225, "o1");
+            createAtom("oxygen", 670, 225, "o2");
+
+            tl = gsap.timeline();
+
+            // --- 阶段 0: 初始状态 (点亮反应物) ---
+            tl.to("#eq-reactants", { opacity: 1, scale: 1.1, duration: 0.5, className: "+=active" });
+            tl.to("#caption", { text: "反应物：2个氢分子 + 1个氧分子", duration: 0.5 }, "<");
+
+            // --- 阶段 1: 运动与碰撞 ---
+            tl.to(".atom", {
+                x: "+=20", y: "+=10", duration: 1, yoyo: true, repeat: 1, ease: "sine.inOut"
+            });
+
+            // 碰撞与条件 (点亮箭头条件)
+            tl.to("#caption", { text: "条件：点燃 / 分子碰撞", duration: 0.5 });
+            tl.to("#eq-condition", { opacity: 1, duration: 0.5 }, "<");
+            
+            // 原子聚拢
+            tl.to("#o1", { x: 370, y: 225, duration: 1.2, ease: "power2.inOut" }, "collision");
+            tl.to("#o2", { x: 430, y: 225, duration: 1.2, ease: "power2.inOut" }, "collision");
+            tl.to("#h1", { x: 340, y: 185, duration: 1.2, ease: "power2.inOut" }, "collision"); 
+            tl.to("#h2", { x: 340, y: 265, duration: 1.2, ease: "power2.inOut" }, "collision"); 
+            tl.to("#h3", { x: 460, y: 185, duration: 1.2, ease: "power2.inOut" }, "collision"); 
+            tl.to("#h4", { x: 460, y: 265, duration: 1.2, ease: "power2.inOut" }, "collision"); 
+
+            // 闪光
+            tl.to(".flash", { opacity: 0.8, duration: 0.1, yoyo: true, repeat: 3 });
+            tl.to(".arrow", { color: "#fff", scale: 1.5, duration: 0.1, yoyo: true, repeat: 3 }, "<"); 
+
+            // --- 阶段 3: 电子转移 (核心) ---
+            tl.to("#caption", { text: "微观变化：电子得失，形成共用电子对", duration: 0.5 });
+            
+            // 电子移动
+            const shiftDuration = 2;
+            tl.to("#h1-electron", { attr: { cx: 20, cy: 5 }, duration: shiftDuration, ease: "elastic.out(1, 0.5)" }, "transfer");
+            tl.to("#h2-electron", { attr: { cx: 20, cy: -5 }, duration: shiftDuration, ease: "elastic.out(1, 0.5)" }, "transfer");
+            tl.to("#h3-electron", { attr: { cx: -20, cy: 5 }, duration: shiftDuration, ease: "elastic.out(1, 0.5)" }, "transfer");
+            tl.to("#h4-electron", { attr: { cx: -20, cy: -5 }, duration: shiftDuration, ease: "elastic.out(1, 0.5)" }, "transfer");
+
+            // 拉近距离
+            tl.to(["#h1", "#h3"], { y: "+=10", duration: 1 }, "transfer");
+            tl.to(["#h2", "#h4"], { y: "-=10", duration: 1 }, "transfer");
+
+            // --- 阶段 4: 完成 (点亮生成物) ---
+            tl.to("#caption", { text: "反应完成：形成 2个水分子 (H₂O)", duration: 1 }, "end");
+            
+            // 切换方程式高亮
+            tl.to("#eq-reactants", { opacity: 0.3, scale: 1, className: "-=active", duration: 0.5 }, "end");
+            tl.to(".arrow", { color: "#aaa", scale: 1, duration: 0.5 }, "end");
+            tl.to("#eq-condition", { opacity: 0, duration: 0.5 }, "end");
+            tl.to("#eq-products", { opacity: 1, scale: 1.2, className: "+=active", duration: 0.5 }, "end");
+
+            // 水分子飘走
+            tl.to(["#o1", "#h1", "#h2"], { x: "-=50", duration: 2, ease: "sine.inOut" }, "float");
+            tl.to(["#o2", "#h3", "#h4"], { x: "+=50", duration: 2, ease: "sine.inOut" }, "float");
+            
+            // 弹出解释框 (在所有动画结束后，方便回顾)
+            // 动画从 "float" 标签开始，持续 2 秒，我们在 2.5 秒后弹出
+            tl.to("#redox-explanation", { opacity: 1, duration: 0.8, scale: 1, ease: "back.out(1.7)" }, "float+=2.5");
+        }
+        
+        // 初始运行
+        runAnimation();
+    </script>
+</body>
+</html>
